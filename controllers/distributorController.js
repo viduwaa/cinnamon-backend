@@ -1,5 +1,5 @@
 import { db } from '../config/db.js';
-import { user, distributor_profile, main, distribute_table, farms, farmer_profile, cultivation, harvest, collect_table, collector_profile, transport, process } from '../src/db/schema.js';
+import { user, distributor_profile, main, distribute_table, farms, farmer_profile, cultivation, harvest, collect_table, collector_profile, transport, process, exporter_profile } from '../src/db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import bcrypt from 'bcrypt';
 import { validationResult } from 'express-validator';
@@ -187,6 +187,35 @@ export const getDistributorProfile = async (req, res) => {
     }
 };
 
+// Get all distributors (for transporter selection)
+export const getAllDistributors = async (req, res) => {
+    try {
+        // Get all distributors with their user info
+        const distributors = await db.select({
+            distributor_id: distributor_profile.distributor_id,
+            user_id: distributor_profile.user_id,
+            name: user.name,
+            phone: user.phone,
+            email: user.email
+        })
+            .from(distributor_profile)
+            .leftJoin(user, eq(distributor_profile.user_id, user.user_id))
+            .where(eq(user.status, 'active'));
+
+        res.json({
+            success: true,
+            distributors: distributors
+        });
+    } catch (error) {
+        console.error("Error fetching distributors:", error);
+        res.status(500).json({ 
+            success: false,
+            message: "Failed to fetch distributors", 
+            error: error.message 
+        });
+    }
+};
+
 // Get available processed batches
 export const getAvailableBatches = async (req, res) => {
     try {
@@ -205,7 +234,9 @@ export const getAvailableBatches = async (req, res) => {
             .from(main)
             .where(and(
                 eq(main.isProcessed, true),
-                eq(main.collected_by_distributor, false)
+                eq(main.collected_by_distributor, false),
+                eq(main.collected_by_exporter, false),
+                eq(main.is_exported, false)
             ));
 
         res.json({
@@ -217,6 +248,43 @@ export const getAvailableBatches = async (req, res) => {
         res.status(500).json({ 
             success: false,
             message: "Failed to fetch available batches", 
+            error: error.message 
+        });
+    }
+};
+
+// Get all exporters for distribution assignment
+export const getAllExporters = async (req, res) => {
+    try {
+        const userRoleId = Number(req.user.role_id);
+        
+        // Allow distributors and maybe processors? Just distributors for now based on context
+        if (isNaN(userRoleId) || userRoleId !== 4) {
+            return res.status(403).json({ 
+                success: false,
+                message: 'Only distributors can view exporters list' 
+            });
+        }
+
+        const exporters = await db.select({
+            exporter_id: exporter_profile.exporter_id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone
+        })
+        .from(exporter_profile)
+        .leftJoin(user, eq(exporter_profile.user_id, user.user_id))
+        .where(eq(user.status, 'active'));
+
+        res.json({
+            success: true,
+            exporters
+        });
+    } catch (error) {
+        console.error("Error fetching exporters:", error);
+        res.status(500).json({ 
+            success: false,
+            message: "Failed to fetch exporters", 
             error: error.message 
         });
     }
@@ -258,6 +326,7 @@ export const getMyDistributions = async (req, res) => {
             created_at: distribute_table.created_at,
             // Main table info
             harvested_quantity: main.harvested_quantity,
+            dried_weight: main.dried_weight,
             is_distributed: main.is_distributed
         })
             .from(distribute_table)
@@ -618,7 +687,7 @@ export const markAsDistributed = async (req, res) => {
         }
 
         const distributorId = distributorProfiles[0].distributor_id;
-        const { batch_no, distributed_date } = req.body;
+        const { batch_no, distributed_date, target_exporter_id } = req.body;
 
         // Verify that the batch exists and is collected by distributor
         const batchRecords = await db.select()
@@ -673,10 +742,11 @@ export const markAsDistributed = async (req, res) => {
         }
 
         const result = await db.transaction(async (tx) => {
-            // update distribute_table with the date
+            // update distribute_table with the date and target exporter
             const updatedDistribute = await tx.update(distribute_table)
                 .set({ 
                     distributed_date: distributed_date,
+                    target_exporter_id: target_exporter_id || null, // null means public
                     updated_at: sql`NOW()`
                 })
                 .where(eq(distribute_table.distribute_id, batch.distribute_id))
@@ -697,7 +767,8 @@ export const markAsDistributed = async (req, res) => {
         const blockchainResult = await BlockchainHelper.recordDistributionComplete(
             {
                 distributed_date: distributed_date,
-                distribute_id: batch.distribute_id
+                distribute_id: batch.distribute_id,
+                target_exporter_id: target_exporter_id || null
             },
             batch_no,
             req.user.user_id,

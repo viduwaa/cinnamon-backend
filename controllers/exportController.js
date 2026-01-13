@@ -1,6 +1,6 @@
 import { db } from '../config/db.js';
 import { user, exporter_profile, main, export_table, farms, farmer_profile, cultivation, harvest, collect_table, collector_profile, transport, process, distribute_table } from '../src/db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, or } from 'drizzle-orm';
 import bcrypt from 'bcrypt';
 import { validationResult } from 'express-validator';
 import { generateToken } from '../utils/jwt.js';
@@ -229,12 +229,35 @@ export const getAvailableBatches = async (req, res) => {
             });
         }
 
+        // Get exporter_id from exporter_profile using user_id
+        const exporterProfiles = await db.select()
+            .from(exporter_profile)
+            .where(eq(exporter_profile.user_id, req.user.user_id));
+
+        if (exporterProfiles.length === 0) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Exporter profile not found' 
+            });
+        }
+
+        const exporterId = exporterProfiles[0].exporter_id;
+        
         // Get batches that are distributed but not yet collected by exporter
-        const availableBatches = await db.select()
+        // Filter: Public (target_exporter_id is NULL) OR Targeted to this exporter
+        const availableBatches = await db.select({
+                ...main,
+                distribute_target_id: distribute_table.target_exporter_id
+            })
             .from(main)
+            .leftJoin(distribute_table, eq(main.distribute_id, distribute_table.distribute_id))
             .where(and(
                 eq(main.is_distributed, true),
-                eq(main.collected_by_exporter, false)
+                eq(main.collected_by_exporter, false),
+                or(
+                    sql`${distribute_table.target_exporter_id} IS NULL`,
+                    eq(distribute_table.target_exporter_id, exporterId)
+                )
             ));
 
         res.json({

@@ -1,5 +1,5 @@
 import { db } from '../config/db.js';
-import { user, collector_profile, main, collect_table, transport, farms, farmer_profile, harvest, cultivation } from '../src/db/schema.js';
+import { user, collector_profile, main, collect_table, transport, farms, farmer_profile, harvest, cultivation, processor_profile } from '../src/db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import bcrypt from 'bcrypt';
 import { validationResult } from 'express-validator';
@@ -9,6 +9,45 @@ import { BlockchainHelper } from '../blockchain/BlockchainHelper.js';
 const sanitizeUser = (userInstance) => {
     const { password_hash, ...userWithoutPassword } = userInstance;
     return userWithoutPassword;
+};
+
+// Get all processors for selection during transport
+export const getProcessors = async (req, res) => {
+    try {
+        // Verify user is a collector
+        const userRoleId = Number(req.user.role_id);
+        
+        if (isNaN(userRoleId) || userRoleId !== 2) {
+            return res.status(403).json({ 
+                success: false,
+                message: 'Only collectors can fetch processors' 
+            });
+        }
+
+        // Get all processors with their profile info
+        const processors = await db.select({
+            processor_id: processor_profile.processor_id,
+            user_id: processor_profile.user_id,
+            process_station_name: processor_profile.process_station_name,
+            process_station_location: processor_profile.process_station_location,
+            name: user.name,
+            phone: user.phone
+        })
+        .from(processor_profile)
+        .leftJoin(user, eq(processor_profile.user_id, user.user_id));
+
+        res.json({
+            success: true,
+            processors: processors
+        });
+    } catch (error) {
+        console.error("Error fetching processors:", error);
+        res.status(500).json({ 
+            success: false,
+            message: "Failed to fetch processors", 
+            error: error.message 
+        });
+    }
 };
 
 export const registerCollector = async (req, res) => {
@@ -340,7 +379,7 @@ export const startTransport = async (req, res) => {
         }
 
         const collectorId = collectorProfiles[0].collector_id;
-        const { batch_no, transport_method, transport_started_date, storage_conditions } = req.body;
+        const { batch_no, transport_method, transport_started_date, storage_conditions, processor_id } = req.body;
 
         // Verify that the batch exists, is harvested, and is collected
         const batchRecords = await db.select()
@@ -388,24 +427,35 @@ export const startTransport = async (req, res) => {
             });
         }
 
+        console.log('[DEBUG] Starting transport for batch:', batch_no);
+        console.log('[DEBUG] req.body:', req.body);
+        console.log('[DEBUG] collectorId:', collectorId);
+
         const result = await db.transaction(async (tx) => {
             // create transport record
             const newTransport = await tx.insert(transport).values({
                 batch_no: batch_no,
                 collector_id: collectorId,
+                processor_id: processor_id || null,
                 transport_method: transport_method,
                 transport_started_date: transport_started_date,
                 storage_conditions: storage_conditions
             }).returning();
 
-            // update main table
-            await tx.update(main)
+            console.log('[DEBUG] Inserted transport record:', newTransport[0]);
+
+            // update main table with transport info and optional processor_id
+            const updateResult = await tx.update(main)
                 .set({ 
                     transport_id: newTransport[0].transport_id,
                     inTransporting: true,
+                    processor_id: processor_id || null,
                     updated_at: sql`NOW()`
                 })
-                .where(eq(main.batch_no, batch_no));
+                .where(eq(main.batch_no, batch_no))
+                .returning();
+
+            console.log('[DEBUG] Updated main table record:', updateResult[0]);
 
             return newTransport[0];
         });
@@ -808,6 +858,8 @@ export const getBatchDetails = async (req, res) => {
             .from(main)
             .where(eq(main.batch_no, batch_no));
 
+        console.log('[DEBUG] getBatchDetails for', batch_no, 'Found batch record:', batchRecords[0]);
+
         if (batchRecords.length === 0) {
             return res.status(404).json({ 
                 success: false,
@@ -906,12 +958,24 @@ export const getBatchDetails = async (req, res) => {
             }
         }
 
+        // Get process details
+        let processData = null;
+        if (batch.process_id) {
+            const processRecords = await db.select()
+                .from(process)
+                .where(eq(process.process_id, batch.process_id));
+            if (processRecords.length > 0) {
+                processData = processRecords[0];
+            }
+        }
+
         res.json({
             success: true,
             batch: {
                 batch_no: batch.batch_no,
                 is_harvested: batch.is_harvested,
                 harvested_quantity: batch.harvested_quantity,
+                dried_weight: batch.dried_weight,
                 is_collected: batch.is_collected,
                 inTransporting: batch.inTransporting,
                 isTransported: batch.isTransported,
@@ -924,7 +988,8 @@ export const getBatchDetails = async (req, res) => {
             harvest: harvestData,
             collection: collectionData,
             collector: collectorData,
-            transport: transportData
+            transport: transportData,
+            process: processData
         });
     } catch (error) {
         console.error("Error fetching batch details:", error);

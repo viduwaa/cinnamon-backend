@@ -1,6 +1,6 @@
 import { db } from '../config/db.js';
 import { user, farmer_profile, farms, cultivation, harvest, main } from '../src/db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, desc } from 'drizzle-orm';
 import bcrypt from 'bcrypt';
 import { validationResult } from 'express-validator';
 import { generateToken } from '../utils/jwt.js';
@@ -460,7 +460,8 @@ export const getCultivations = async (req, res) => {
         .innerJoin(cultivation, eq(main.batch_no, cultivation.batch_no))
         .innerJoin(farms, eq(main.farm_id, farms.farm_id))
         .leftJoin(harvest, eq(main.batch_no, harvest.batch_no))
-        .where(eq(main.farmer_id, farmerId));
+        .where(eq(main.farmer_id, farmerId))
+        .orderBy(desc(cultivation.date_of_planting), desc(cultivation.created_at));
 
         res.json({
             success: true,
