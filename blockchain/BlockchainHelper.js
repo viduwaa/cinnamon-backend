@@ -207,6 +207,52 @@ export class BlockchainHelper {
         }
     }
 
+    // record transport end on blockchain
+    static async recordTransportEnd(transportData, batchNo, actorUserId, collectorId, processorId) {
+        try {
+            const privateKey = await KeyManager.getPrivateKey(actorUserId);
+            const publicKey = await KeyManager.getPublicKey(actorUserId);
+            
+            const signedTx = await TransactionSigner.createSignedTransaction({
+                transactionType: TransactionTypes.TRANSPORT_END,
+                batchNo: batchNo,
+                actorUserId: actorUserId,
+                actorRole: 'processor', // Default to processor as recipient
+                privateKey: privateKey,
+                transactionData: {
+                    collectorId: collectorId,
+                    processorId: processorId,
+                    transportEndedDate: transportData.transport_ended_date || null,
+                    transportId: transportData.transport_id || null
+                },
+                fromEntityId: collectorId,
+                toEntityId: processorId
+            });
+
+            signedTx.actorPublicKey = publicKey;
+
+            const transaction = new Transaction(signedTx);
+            const result = await blockchainService.addTransaction(transaction, true);
+
+            if (result.success && result.block) {
+                return {
+                    success: true,
+                    transactionHash: transaction.hash,
+                    blockNumber: result.block.blockNumber,
+                    blockHash: result.block.hash
+                };
+            }
+
+            return { success: true, transactionHash: transaction.hash, pending: true };
+        } catch (error) {
+            console.error('[BCH] Error recording transport end:', error.message);
+            if (error.message.includes('No active keys found') || error.message.includes('Private key is required')) {
+                return { success: false, error: error.message, helpMessage: 'Please generate your blockchain keys first' };
+            }
+            return { success: false, error: error.message };
+        }
+    }
+
     // record drying on blockchain
     static async recordDrying(dryingData, batchNo, processorUserId, processorId) {
         try {
@@ -384,6 +430,96 @@ export class BlockchainHelper {
             return { success: true, transactionHash: transaction.hash, pending: true };
         } catch (error) {
             console.error('[BCH] Error recording distribution:', error.message);
+            if (error.message.includes('No active keys found') || error.message.includes('Private key is required')) {
+                return { success: false, error: error.message, helpMessage: 'Please generate your blockchain keys first' };
+            }
+            return { success: false, error: error.message };
+        }
+    }
+
+
+    // record distribution complete on blockchain
+    static async recordDistributionComplete(distributionData, batchNo, distributorUserId, distributorId) {
+        try {
+            const privateKey = await KeyManager.getPrivateKey(distributorUserId);
+            const publicKey = await KeyManager.getPublicKey(distributorUserId);
+            
+            const signedTx = await TransactionSigner.createSignedTransaction({
+                transactionType: TransactionTypes.DISTRIBUTION_COMPLETE,
+                batchNo: batchNo,
+                actorUserId: distributorUserId,
+                actorRole: 'distributor',
+                privateKey: privateKey,
+                transactionData: {
+                    distributorId: distributorId,
+                    distributedDate: distributionData.distributed_date || null,
+                    distributeId: distributionData.distribute_id || null
+                }
+            });
+
+            signedTx.actorPublicKey = publicKey;
+
+            const transaction = new Transaction(signedTx);
+            const result = await blockchainService.addTransaction(transaction, true);
+
+            if (result.success && result.block) {
+                return {
+                    success: true,
+                    transactionHash: transaction.hash,
+                    blockNumber: result.block.blockNumber,
+                    blockHash: result.block.hash
+                };
+            }
+
+            return { success: true, transactionHash: transaction.hash, pending: true };
+        } catch (error) {
+            console.error('[BCH] Error recording distribution complete:', error.message);
+            if (error.message.includes('No active keys found') || error.message.includes('Private key is required')) {
+                return { success: false, error: error.message, helpMessage: 'Please generate your blockchain keys first' };
+            }
+            return { success: false, error: error.message };
+        }
+    }
+
+
+    // record export collect on blockchain
+    static async recordExportCollect(exportData, batchNo, exporterUserId, exporterId, distributorId) {
+        try {
+            const privateKey = await KeyManager.getPrivateKey(exporterUserId);
+            const publicKey = await KeyManager.getPublicKey(exporterUserId);
+            
+            const signedTx = await TransactionSigner.createSignedTransaction({
+                transactionType: TransactionTypes.EXPORT_COLLECT,
+                batchNo: batchNo,
+                actorUserId: exporterUserId,
+                actorRole: 'exporter',
+                privateKey: privateKey,
+                transactionData: {
+                    exporterId: exporterId,
+                    collectedDate: exportData.collected_date || null,
+                    exportId: exportData.export_id || null
+                },
+                fromEntityId: distributorId,
+                toEntityId: exporterId
+            });
+
+            signedTx.actorPublicKey = publicKey;
+
+            const transaction = new Transaction(signedTx);
+            const result = await blockchainService.addTransaction(transaction, true);
+
+            if (result.success && result.block) {
+                return {
+                    success: true,
+                    transactionHash: transaction.hash,
+                    blockNumber: result.block.blockNumber,
+                    blockHash: result.block.hash
+                };
+            }
+
+            return { success: true, transactionHash: transaction.hash, pending: true };
+        } catch (error) {
+            console.error('[BCH] Error recording export collect:', error.message);
             if (error.message.includes('No active keys found') || error.message.includes('Private key is required')) {
                 return { success: false, error: error.message, helpMessage: 'Please generate your blockchain keys first' };
             }
