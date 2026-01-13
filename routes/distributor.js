@@ -4,6 +4,8 @@ import {
     registerDistributor, 
     loginDistributor, 
     getDistributorProfile,
+    getAllDistributors,
+    getAllExporters,
     getAvailableBatches,
     getMyDistributions,
     getDistributionDetails,
@@ -26,6 +28,10 @@ router.post('/login', [
 ], loginDistributor);
 
 router.get('/profile', protect, getDistributorProfile);
+
+router.get('/all', protect, getAllDistributors);
+
+router.get('/exporters', protect, getAllExporters);
 
 router.get('/batches/available', protect, getAvailableBatches);
 

@@ -7,10 +7,13 @@ import {
     createGraderProfile,
     getGraders,
     getAvailableBatches,
+    getDeliveringBatches,
+    receiveBatch,
     getGradedBatches,
     getMyProcessings,
     getProcessingDetails,
     markAsInProcess,
+    startDrying,
     markAsDried,
     markAsGraded,
     markAsPacked,
@@ -45,6 +48,14 @@ router.get('/graders', protect, getGraders);
 
 router.get('/batches/available', protect, getAvailableBatches);
 
+// Get batches currently being delivered (in transit)
+router.get('/batches/delivering', protect, getDeliveringBatches);
+
+router.post('/receive', protect, [
+    check('batch_no', 'Batch number is required').not().isEmpty(),
+    check('batch_no', 'Batch number must be a valid string').isString()
+], receiveBatch);
+
 // Get batches that are graded but not yet packed (ready for packaging)
 router.get('/batches/graded', protect, getGradedBatches);
 
@@ -52,6 +63,13 @@ router.post('/process/start', protect, [
     check('batch_no', 'Batch number is required').not().isEmpty(),
     check('batch_no', 'Batch number must be a valid string').isString()
 ], markAsInProcess);
+
+router.post('/process/dry/start', protect, [
+    check('batch_no', 'Batch number is required').not().isEmpty(),
+    check('batch_no', 'Batch number must be a valid string').isString(),
+    check('dry_started_date', 'Dry started date is required').not().isEmpty(),
+    check('dry_started_date', 'Dry started date must be a valid date').isISO8601()
+], startDrying);
 
 router.post('/process/dry', protect, [
     check('batch_no', 'Batch number is required').not().isEmpty(),

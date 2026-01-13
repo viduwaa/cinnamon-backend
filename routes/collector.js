@@ -1,8 +1,11 @@
 import express from 'express';
 const router = express.Router();
-import { registerCollector, loginCollector, getCollectorProfile, collectBatch, startTransport, completeTransport, getAvailableBatches, getMyCollections, getTransportReadyBatches, getBatchDetails } from '../controllers/collectorController.js';
+import { registerCollector, loginCollector, getCollectorProfile, collectBatch, startTransport, completeTransport, getAvailableBatches, getMyCollections, getTransportReadyBatches, getBatchDetails, getProcessors } from '../controllers/collectorController.js';
 import { protect } from '../middleware/auth.js';
 import { check } from 'express-validator';
+
+// Get all processors for selection during transport
+router.get('/processors', protect, getProcessors);
 
 router.post('/register', [
     check('name', 'Name is required').not().isEmpty(),
