@@ -115,6 +115,7 @@ export const transport = pgTable('transport', {
   transport_id: serial('transport_id').primaryKey(),
   batch_no: text('batch_no').references(() => main.batch_no, { onDelete: 'cascade' }),
   collector_id: integer('collector_id').references(() => collector_profile.collector_id, { onDelete: 'cascade' }).notNull(),
+  processor_id: integer('processor_id').references(() => processor_profile.processor_id, { onDelete: 'set null' }),
   transport_method: text('transport_method'),
   transport_started_date: date('transport_started_date'),
   transport_ended_date: date('transport_ended_date'),
@@ -176,6 +177,7 @@ export const distribute_table = pgTable('distribute_table', {
   batch_no: text('batch_no').references(() => main.batch_no, { onDelete: 'cascade' }),
   collected_date: date('collected_date'),
   distributed_date: date('distributed_date'),
+  target_exporter_id: integer('target_exporter_id').references(() => exporter_profile.exporter_id, { onDelete: 'set null' }),
   created_at: timestamptz('created_at').defaultNow(),
   updated_at: timestamptz('updated_at').defaultNow()
 });

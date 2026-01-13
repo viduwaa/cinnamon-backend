@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Readable } from 'stream';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,6 +103,75 @@ export const uploadToGoogleDrive = async (fileObject, folderName = 'Organic Cert
         if (fileObject.path && fs.existsSync(fileObject.path)) {
             fs.unlinkSync(fileObject.path);
         }
+        throw error;
+    }
+};
+
+/**
+ * Upload buffer directly to Google Drive
+ * @param {Buffer} buffer - File buffer
+ * @param {string} mimeType - File mime type
+ * @param {string} originalName - Original filename
+ * @param {string} folderName - Folder name in Google Drive
+ * @param {string} customFileName - Optional custom filename
+ * @returns {Promise<Object>} - File metadata
+ */
+export const uploadBufferToGoogleDrive = async (buffer, mimeType, originalName, folderName = 'Organic Certification', customFileName = null) => {
+    try {
+        if (process.env.GOOGLE_REFRESH_TOKEN) {
+            oauth2Client.setCredentials({
+                refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+            });
+        } else {
+            throw new Error('GOOGLE_REFRESH_TOKEN not set in environment variables');
+        }
+
+        const drive = google.drive({ version: 'v3', auth: oauth2Client });
+        let folderId = await findOrCreateFolder(drive, folderName);
+
+        const fileExtension = path.extname(originalName);
+        let fileName;
+        if (customFileName) {
+            const timestamp = Date.now();
+            fileName = `${customFileName}-${timestamp}${fileExtension}`;
+        } else {
+            const timestamp = Date.now();
+            const nameWithoutExt = path.basename(originalName, fileExtension);
+            fileName = `${nameWithoutExt}-${timestamp}${fileExtension}`;
+        }
+
+        const fileMetadata = {
+            name: fileName,
+            parents: [folderId]
+        };
+
+        const media = {
+            mimeType: mimeType,
+            body: Readable.from(buffer)
+        };
+
+        const response = await drive.files.create({
+            requestBody: fileMetadata,
+            media: media,
+            fields: 'id, name, webViewLink, webContentLink'
+        });
+
+        await drive.permissions.create({
+            fileId: response.data.id,
+            requestBody: {
+                role: 'reader',
+                type: 'anyone'
+            }
+        });
+
+        return {
+            fileId: response.data.id,
+            fileName: response.data.name,
+            webViewLink: response.data.webViewLink,
+            webContentLink: response.data.webContentLink
+        };
+    } catch (error) {
+        console.error('Error uploading buffer to Google Drive:', error);
         throw error;
     }
 };
