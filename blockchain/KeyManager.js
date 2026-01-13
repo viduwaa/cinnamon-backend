@@ -52,7 +52,7 @@ export class KeyManager {
         }
     }
     
-    // gt user public key
+    // get user public key - auto-generate if not exists
     static async getPublicKey(userId) {
         try {
             const result = await db.select()
@@ -60,7 +60,10 @@ export class KeyManager {
                 .where(eq(user_keys.user_id, userId));
             
             if (result.length === 0) {
-                return null;
+                // Auto-generate keys if they don't exist
+                console.log(`[BC] Auto-generating keys for user ${userId}...`);
+                const { publicKey } = await this.generateKeysForUser(userId);
+                return publicKey;
             }
             
             return result[0].public_key;
@@ -70,15 +73,18 @@ export class KeyManager {
         }
     }
     
-    // get user private key - decrypted
+    // get user private key - decrypted - auto-generate if not exists
     static async getPrivateKey(userId, password = null) {
         try {
-            const result = await db.select()
+            let result = await db.select()
                 .from(user_keys)
                 .where(eq(user_keys.user_id, userId));
             
             if (result.length === 0) {
-                throw new Error('No keys found for user');
+                // Auto-generate keys if they don't exist
+                console.log(`[BC] Auto-generating keys for user ${userId}...`);
+                const generated = await this.generateKeysForUser(userId);
+                return generated.privateKey;
             }
             
             if (!result[0].is_active) {
